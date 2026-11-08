@@ -86,7 +86,7 @@ const WM_ANIM: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 5;
 pub struct GifPlayer {
     f: IWICImagingFactory, dec: IWICBitmapDecoder,
     pub w: u32, pub h: u32, pub count: u32, pub last: u32,
-    idx: u32, pub canvas: Vec<u8>, saved: Option<Vec<u8>>, prev_disp: u8, prev_rect: (i32, i32, i32, i32),
+    webp: bool, idx: u32, pub canvas: Vec<u8>, saved: Option<Vec<u8>>, prev_disp: u8, prev_rect: (i32, i32, i32, i32),
 }
 
 impl GifPlayer {
@@ -98,8 +98,9 @@ impl GifPlayer {
                 w = query_u16(&r, "/logscrdesc/Width").unwrap_or(0) as u32;
                 h = query_u16(&r, "/logscrdesc/Height").unwrap_or(0) as u32;
             }
+            let webp = dec.GetContainerFormat().map(|g| g == GUID_ContainerFormatWebp).unwrap_or(false);
             if w == 0 || h == 0 { dec.GetFrame(0)?.GetSize(&mut w, &mut h)?; }
-            Ok(GifPlayer { f: f.clone(), dec, w, h, count, last: 0, idx: 0, canvas: vec![0; (w * h * 4) as usize],
+            Ok(GifPlayer { f: f.clone(), dec, w, h, count, last: 0, webp, idx: 0, canvas: vec![0; (w * h * 4) as usize],
                 saved: None, prev_disp: 0, prev_rect: (0, 0, 0, 0) })
         }
     }
@@ -131,6 +132,11 @@ impl GifPlayer {
                 top = query_u16(&r, "/imgdesc/Top").unwrap_or(0) as i32;
                 if let Some(d) = query_u16(&r, "/grctlext/Delay") { delay = d as u32; }
                 disp = query_u16(&r, "/grctlext/Disposal").unwrap_or(0) as u8;
+                if self.webp {
+                    // WIC hands out fully composited WebP frames: just replace the canvas; duration is in ms
+                    left = 0; top = 0; disp = 2;
+                    delay = match query(&r, "/ANMF/FrameDuration") { Some((Val::U(n),)) => (n / 10).min(u32::MAX as u64) as u32, _ => 10 };
+                }
             }
             if disp == 3 { self.saved = Some(self.canvas.clone()); }
             let conv = self.f.CreateFormatConverter()?;
@@ -310,7 +316,7 @@ fn decode_full(f: &IWICImagingFactory, path: &Path, gen: u64, prefetch: bool) ->
     let o = open(f, path, MAX_SIDE, gen, !prefetch)?;
     unsafe {
         // animated GIF: compose frame 0 on the logical-screen canvas; the UI starts playback of the rest
-        if o.dec.GetContainerFormat().map(|g| g == GUID_ContainerFormatGif).unwrap_or(false) && o.dec.GetFrameCount().unwrap_or(1) > 1 {
+        if o.dec.GetContainerFormat().map(|g| g == GUID_ContainerFormatGif || g == GUID_ContainerFormatWebp).unwrap_or(false) && o.dec.GetFrameCount().unwrap_or(1) > 1 {
             if let Ok(mut p) = GifPlayer::new(f, o.dec.clone()) {
                 if p.next().is_ok() {
                     let (w, h) = (p.w, p.h);

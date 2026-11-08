@@ -48,7 +48,7 @@ pub struct Ui {
     pub thumb: f32, pub thumb_cap: u32, pub browse: bool,
     pub i_dock: Dock, pub i_size: f32, pub i_hidden: HashSet<String>, pub i_edit: bool, pub i_scroll: f32, pub i_content: f32,
     pub info_rows: Vec<(String, R, bool)>,
-    pub hover: Hit, pub split: Option<Split>,
+    pub hover: Hit, pub split: Option<Split>, pub drag_src: Option<(f32, f32, usize)>,
 }
 impl Ui {
     pub fn from_cfg(c: &Cfg) -> Ui {
@@ -60,7 +60,7 @@ impl Ui {
             thumb: c.num("thumb_size").clamp(32.0, 320.0), thumb_cap: 0, browse: false,
             i_dock: Dock::parse(&c.text("info_dock"), Dock::Right), i_size: c.num("info_size"),
             i_hidden: c.text("info_hidden").split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
-            i_edit: false, i_scroll: 0.0, i_content: 0.0, info_rows: vec![], hover: Hit::None, split: None,
+            i_edit: false, i_scroll: 0.0, i_content: 0.0, info_rows: vec![], hover: Hit::None, split: None, drag_src: None,
         }
     }
 }
@@ -310,6 +310,7 @@ impl App {
             Hit::Thumb(i) => {
                 self.go(i as isize);
                 if dbl && self.u.browse { self.u.browse = false; self.apply_fit(); }
+                if !dbl { self.u.drag_src = Some((x, y, i)); unsafe { SetCapture(self.hwnd); } }
                 self.ensure_visible(); self.invalidate(); true
             }
             Hit::InfoRow(k) => {
@@ -341,11 +342,22 @@ impl App {
             self.apply_fit(); self.ensure_visible(); self.invalidate();
             return true;
         }
+        if let Some((sx, sy, i)) = self.u.drag_src {
+            let (tx, ty) = unsafe { (GetSystemMetrics(SM_CXDRAG).max(4) as f32, GetSystemMetrics(SM_CYDRAG).max(4) as f32) };
+            if (x - sx).abs() > tx || (y - sy).abs() > ty {
+                self.u.drag_src = None;
+                unsafe { let _ = ReleaseCapture(); }
+                if let Some(p) = self.files.get(i).cloned() { crate::shell::drag_file(self.hwnd, &p); }
+                self.u.hover = Hit::None; self.invalidate();
+            }
+            return true;
+        }
         let h = self.hit(x, y);
         if h != self.u.hover { self.u.hover = h; self.invalidate(); }
         false
     }
     pub fn ui_mouse_up(&mut self) -> bool {
+        if self.u.drag_src.take().is_some() { unsafe { let _ = ReleaseCapture(); } return true; }
         if self.u.split.take().is_some() { unsafe { let _ = ReleaseCapture(); } self.save_layout(); return true; }
         false
     }

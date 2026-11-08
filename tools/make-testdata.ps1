@@ -68,6 +68,16 @@ $g.Dispose(); $b.Save("$Out\alpha.png", $DI::Png); $b.Dispose()
 # 1x1 WebP (lossy) - tests the OS WebP codec path
 [IO.File]::WriteAllBytes("$Out\tiny.webp", [Convert]::FromBase64String("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA"))
 
+# animated WebP: 3 identical 1x1 lossy frames, 120 ms each (hand-assembled RIFF: VP8X + ANIM + 3x ANMF)
+function U24($v) { [byte[]]@(($v -band 255), (($v -shr 8) -band 255), (($v -shr 16) -band 255)) }
+function U32($v) { [BitConverter]::GetBytes([uint32]$v) }
+function Chunk($tag, $data) { $c = [Text.Encoding]::ASCII.GetBytes($tag) + (U32 $data.Length) + $data; if ($data.Length % 2) { $c += [byte]0 }; , $c }
+$vp8 = [Convert]::FromBase64String("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA")[12..41]
+$wb = [Text.Encoding]::ASCII.GetBytes('WEBP') + (Chunk 'VP8X' ([byte[]](0x12, 0, 0, 0) + (U24 0) + (U24 0))) + (Chunk 'ANIM' ((U32 4279312947) + [byte[]](0, 0)))
+foreach ($i in 1..3) { $wb += (Chunk 'ANMF' ((U24 0) + (U24 0) + (U24 0) + (U24 0) + (U24 120) + [byte[]](0) + $vp8)) }
+New-Item -ItemType Directory -Force "$Out\webp" | Out-Null
+[IO.File]::WriteAllBytes("$Out\webp\moving.webp", [Text.Encoding]::ASCII.GetBytes('RIFF') + (U32 $wb.Length) + $wb)
+
 # animated GIF: 5 frames, 200 ms each, a bar that moves left to right
 $cols = 'Red', 'Orange', 'Yellow', 'Green', 'Blue'
 $frames = for ($i = 0; $i -lt 5; $i++) {

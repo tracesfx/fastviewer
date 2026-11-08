@@ -171,3 +171,21 @@ pub fn log_timing(what: &str) {
         }
     }
 }
+
+/// Starts a shell file drag (as if dragged from Explorer) so the file can be dropped into other programs.
+/// Blocks in the OLE drag loop until the user drops or cancels.
+pub fn drag_file(hwnd: HWND, path: &Path) {
+    use windows::Win32::System::Com::{CoTaskMemFree, IDataObject};
+    use windows::Win32::System::Ole::*;
+    unsafe {
+        let _ = OleInitialize(None);
+        let wp = crate::decode::wide_os(path);
+        let mut pidl = std::ptr::null_mut();
+        if SHParseDisplayName(PCWSTR(wp.as_ptr()), None, &mut pidl, 0, None).is_err() { return; }
+        let arr = [pidl as *const _];
+        if let Ok(obj) = SHCreateDataObject::<_, IDataObject>(None, Some(&arr), None::<&IDataObject>) {
+            let _ = SHDoDragDrop(Some(hwnd), &obj, None::<&IDropSource>, DROPEFFECT_COPY | DROPEFFECT_LINK);
+        }
+        CoTaskMemFree(Some(pidl as *const _));
+    }
+}

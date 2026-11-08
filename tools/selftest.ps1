@@ -304,6 +304,11 @@ Key $p (Letter 'a'); Start-Sleep -Milliseconds 900; $s = State $p; Check 'A resu
 Key $p $VK['Right'] 0 400; $s = State $p; Check 'navigating away stops animation' ($s['anim'] -eq 'False' -or $s['file'] -notmatch 'anim')
 Stop-FV $p
 
+$p = Start-FV @("$Data\webp\moving.webp"); Start-Sleep -Milliseconds 600; $s = State $p; $seen = @{}
+$sw = [Diagnostics.Stopwatch]::StartNew(); while ($sw.ElapsedMilliseconds -lt 1200) { $fr = (State $p)['frame']; if ($fr) { $seen[$fr] = 1 } }
+Check 'animated WebP detected as animation (3 frames) and plays' ($s['anim'] -eq 'True' -and $s['meta.Animation'] -eq '3 frames' -and $seen.Count -ge 3) "anim=$($s['anim']) $($s['meta.Animation']) frames=$($seen.Keys -join ',')"
+Stop-FV $p
+
 Write-Host "`n[11] Drag & drop and command-line lists"
 $m1 = Get-ChildItem "$Data\many1" -Filter *.png | ForEach-Object FullName; $m2 = Get-ChildItem "$Data\many2" -Filter *.png | ForEach-Object FullName
 $p = Start-FV @("$Data\a1.png")
